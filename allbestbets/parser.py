@@ -146,7 +146,7 @@ async def parse(status):
     """Parsing /arbs/live page"""
     session = None
     try:
-        #status = 4 - parser must be paused
+        #status = 2 - parser must be paused
         if status == 2:
             await update_status_work('paused parsing...')
             return
