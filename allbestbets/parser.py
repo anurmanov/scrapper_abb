@@ -92,54 +92,63 @@ async def authenticate():
 
 async def update_vilki(arbs):
     """Updating vilki table by new list of bet-information"""
-    await update_status_work('started updating vilki table...')
-    async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
-        cur = await conn.cursor()
-        await cur.execute('delete from vilki;')
-        for arb in arbs:
-            await cur.execute("""insert into vilki(percent, min_koef, max_koef, initiator, event_name, team1_name, team2_name, league, sport_id, country_id) values(%s,%s, %s, %s,'%s','%s','%s','%s', %s, %s); commit;""" % (arb['percent'], arb['min_koef'], arb['max_koef'], arb['initiator'], arb['event_name'], arb['team1_name'], arb['team2_name'], arb['league'], arb['sport_id'], arb['country_id']))
-        await cur.close()
-    await update_status_work('finished updating vilki table...')
+    try:
+        await update_status_work('started updating vilki table...')
+        async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
+            cur = await conn.cursor()
+            await cur.execute('delete from vilki;')
+            for arb in arbs:
+                await cur.execute("""insert into vilki(percent, min_koef, max_koef, initiator, event_name, team1_name, team2_name, league, sport_id, country_id) values(%s, %s, %s, %s,"%s","%s","%s","%s", %s, %s); commit;""" % (arb['percent'], arb['min_koef'], arb['max_koef'], arb['initiator'], arb['event_name'].replace('"',"'"), arb['team1_name'].replace('"',"'"), arb['team2_name'].replace('"',"'"), arb['league'].replace('"',"'"), arb['sport_id'], arb['country_id']))
+            await cur.close()
+        await update_status_work('finished updating vilki table...')
+    except Exception as exc:
+        print(exc)
 
 async def update_status_work(description, status = None):
     """Updating status of work_parser table"""
-    async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
-        cur = await conn.cursor()
-        print(description)
-        if status:
-            await cur.execute(f"update work_parser set status_work = '{description}', status = {status}; commit;")
-        else:
-            await cur.execute(f"update work_parser set status_work = '{description}'; commit;")
-        await cur.close()
+    try:
+        async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
+            cur = await conn.cursor()
+            print(description)
+            if status:
+                await cur.execute(f"update work_parser set status_work = '{description}', status = {status}; commit;")
+            else:
+                await cur.execute(f"update work_parser set status_work = '{description}'; commit;")
+            await cur.close()
+    except Exception as exc:
+        print(exc)
 
 
 async def check_status():
     """Checking work_parser status and demand of the re-authetication"""
     status = None
-    async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
-        cur = await conn.cursor()
-        await cur.execute('select status from work_parser;')
-        row = await cur.fetchone()
-        if row:
-            status = row[0]
-        else:
-            await cur.execute("insert into work_parser(date_work, status_work, status) values(now(), '%s', %d); commit;"% (work_statuses['working']['description'], work_statuses['working']['status']))
-            status = work_statuses['working']['status']
-        #check credentials
-        await cur.execute('select login, pass, proxy from login;')
-        r = await cur.fetchone()
-        if r:
-            #if login, password or proxy have been changed then we must reauthenticate
-            if r[0] != login['user'] or r[1] != login['pass'] or r[2] != login['proxy']:
-                login['user']=r[0]
-                login['pass']=r[1]
-                login['proxy']=r[2]
-                #status = 3 - parst must reauthenticate
-                await cur.execute('update work_parser set = 3; commit;')
-                status = 3
-        else:
-            await cur.execute("insert into login(login, pass, proxy) values('%s', '%s', '%s'); commit;" % (login['user'], login['pass'], login['proxy']))
-        await cur.close()
+    try:
+        async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
+            cur = await conn.cursor()
+            await cur.execute('select status from work_parser;')
+            row = await cur.fetchone()
+            if row:
+                status = row[0]
+            else:
+                await cur.execute("insert into work_parser(date_work, status_work, status) values(now(), '%s', %d); commit;"% (work_statuses['working']['description'], work_statuses['working']['status']))
+                status = work_statuses['working']['status']
+            #check credentials
+            await cur.execute('select login, pass, proxy from login;')
+            r = await cur.fetchone()
+            if r:
+                #if login, password or proxy have been changed then we must reauthenticate
+                if r[0] != login['user'] or r[1] != login['pass'] or r[2] != login['proxy']:
+                    login['user']=r[0]
+                    login['pass']=r[1]
+                    login['proxy']=r[2]
+                    #status = 3 - parst must reauthenticate
+                    await cur.execute('update work_parser set = 3; commit;')
+                    status = 3
+            else:
+                await cur.execute("insert into login(login, pass, proxy) values('%s', '%s', '%s'); commit;" % (login['user'], login['pass'], login['proxy']))
+            await cur.close()
+    except Exception as exc:
+        print(exc)
     return status
 
 async def parse(status):
