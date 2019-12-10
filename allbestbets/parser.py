@@ -6,9 +6,7 @@ import aiomysql
 import aiohttp
 from bs4 import BeautifulSoup as BS
 from python_anticaptcha import AnticaptchaClient, NoCaptchaTaskProxylessTask
-from .settings import anticaptcha_key, fetching_interval_in_seconds, login, \
-fetching_url, profile_path, auth_url, arbs_live, abb_db_host, abb_db_user, \
-abb_db_port, abb_db_password, abb_db, abb_request_headers, abb_post_request_data
+import .settings as settings
 
 work_statuses = {
     'working': {'status': 1, 'description': 'the scrapper process is working...'},
@@ -20,11 +18,11 @@ work_statuses = {
 async def authenticate():
     await update_status_work('authenticating')    
     session = await aiohttp.ClientSession()
-    resp = await session.get(fetching_url + profile_path)
+    resp = await session.get(settings.fetching_url + settings.profile_path)
     cookies = dict(session.cookie_jar)
     #print(f'cookies={dict(cookies)}')
     page = await resp.text()
-    m = re.search(auth_url, resp.url, flags=re.I)
+    m = re.search(settings.auth_url, resp.url, flags=re.I)
     if m:
         soup = BS(page, 'html.parser')
         auth_form =  soup.find(id = 'new_allbestbets_user')
@@ -43,7 +41,7 @@ async def authenticate():
         solution = ''
         while not solution:
             try:
-                client = AnticaptchaClient(anticaptcha_key)
+                client = AnticaptchaClient(settings.anticaptcha_key)
                 task = NoCaptchaTaskProxylessTask(recaptcha_url, site_key)
                 job = client.createTask(task)
                 job.join()
@@ -55,8 +53,8 @@ async def authenticate():
 
         data = {}
         auth = {}
-        auth[auth_form.find(id = 'allbestbets_user_email').get('name')] = login['user']
-        auth[auth_form.find(id = 'allbestbets_user_password').get('name')] = login['pass']
+        auth[auth_form.find(id = 'allbestbets_user_email').get('name')] = settings.login['user']
+        auth[auth_form.find(id = 'allbestbets_user_password').get('name')] = settings.login['pass']
         hidden_inputs = auth_form.find_all('input', {'type': 'hidden'})
         if hidden_inputs:
             hiddens = {}
@@ -79,14 +77,14 @@ async def authenticate():
         cookies.update(additional_cookies)
         cookies['visitor_type'] = 'free_account'
         print(f'cookies = {cookies}')
-        session = aiohttp.ClientSession(cookies = cookies, headers = abb_request_headers)
-        resp = await session.post(fetching_url + sign_in_url, data = data)
+        session = aiohttp.ClientSession(cookies = cookies, headers = settings.abb_request_headers)
+        resp = await session.post(settings.fetching_url + sign_in_url, data = data)
     return session
     """page = await resp.text()
     print('---------------------------------')
     print(f'url={resp.url}, status={str(resp.status)}')
     print(page)
-    resp = await session.get(fetching_url + profile_path)
+    resp = await session.get(settings.fetching_url + settings.profile_path)
     print('---------------------------------')
     print(f'url={resp.url}, status={str(resp.status)}')"""
 
@@ -94,7 +92,7 @@ async def update_vilki(arbs):
     """Updating vilki table by new list of bet-information"""
     try:
         await update_status_work('started updating vilki table...')
-        async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
+        async with aiomysql.connect(host=settings.settings.abb_db_host, port=settings.settings.abb_db_port, db=settings.abb_db, user=settings.settings.abb_db_user, password=settings.settings.abb_db_password) as conn:
             cur = await conn.cursor()
             await cur.execute('delete from vilki;')
             for arb in arbs:
@@ -107,7 +105,7 @@ async def update_vilki(arbs):
 async def update_status_work(description, status = None):
     """Updating status of work_parser table"""
     try:
-        async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
+        async with aiomysql.connect(host=settings.settings.abb_db_host, port=settings.settings.abb_db_port, db=settings.abb_db, user=settings.settings.abb_db_user, password=settings.settings.abb_db_password) as conn:
             cur = await conn.cursor()
             print(description)
             if status:
@@ -123,7 +121,7 @@ async def check_status():
     """Checking work_parser status and demand of the re-authetication"""
     status = None
     try:
-        async with aiomysql.connect(host=abb_db_host, port=abb_db_port, db=abb_db, user=abb_db_user, password=abb_db_password) as conn:
+        async with aiomysql.connect(host=settings.settings.abb_db_host, port=settings.settings.abb_db_port, db=settings.abb_db, user=settings.settings.abb_db_user, password=settings.settings.abb_db_password) as conn:
             cur = await conn.cursor()
             await cur.execute('select status from work_parser;')
             row = await cur.fetchone()
@@ -133,19 +131,19 @@ async def check_status():
                 await cur.execute("insert into work_parser(date_work, status_work, status) values(now(), '%s', %d); commit;"% (work_statuses['working']['description'], work_statuses['working']['status']))
                 status = work_statuses['working']['status']
             #check credentials
-            await cur.execute('select login, pass, proxy from login;')
+            await cur.execute('select settings.login, pass, proxy from settings.login;')
             r = await cur.fetchone()
             if r:
-                #if login, password or proxy have been changed then we must reauthenticate
-                if r[0] != login['user'] or r[1] != login['pass'] or r[2] != login['proxy']:
-                    login['user']=r[0]
-                    login['pass']=r[1]
-                    login['proxy']=r[2]
+                #if settings.login, password or proxy have been changed then we must reauthenticate
+                if r[0] != settings.login['user'] or r[1] != settings.login['pass'] or r[2] != settings.login['proxy']:
+                    settings.login['user']=r[0]
+                    settings.login['pass']=r[1]
+                    settings.login['proxy']=r[2]
                     #status = 3 - parst must reauthenticate
                     await cur.execute('update work_parser set = 3; commit;')
                     status = 3
             else:
-                await cur.execute("insert into login(login, pass, proxy) values('%s', '%s', '%s'); commit;" % (login['user'], login['pass'], login['proxy']))
+                await cur.execute("insert into settings.login(settings.login, pass, proxy) values('%s', '%s', '%s'); commit;" % (settings.login['user'], settings.login['pass'], settings.login['proxy']))
             await cur.close()
     except Exception as exc:
         print(exc)
@@ -164,9 +162,9 @@ async def parse(status):
         #temporary unavailable feature
         elif status == 3:
             session = await authenticate()"""
-        session = aiohttp.ClientSession(headers = abb_request_headers)
+        session = aiohttp.ClientSession(headers = settings.abb_request_headers)
         await update_status_work('started parsing...')
-        async with session.post(fetching_url, data = abb_post_request_data) as resp:
+        async with session.post(settings.fetching_url, data = settings.abb_post_request_data) as resp:
             arbs_json  = await resp.json()
             arbs = []
             arbs_items = arbs_json['arbs']
@@ -200,4 +198,4 @@ async def parse_periodic():
         if status == 4:
             break
         await parse(status)
-        await asyncio.sleep(fetching_interval_in_seconds)
+        await asyncio.sleep(settings.fetching_interval_in_seconds)
